@@ -36,6 +36,52 @@ class FilterConfig:
 # DNSSEC record types to exclude when without_dnssec is True
 DNSSEC_TYPES = {'DNSKEY', 'DS', 'NSEC3PARAM', 'NSEC3', 'NSEC', 'RRSIG'}
 
+# DNS record classes
+DNS_CLASSES = {'IN', 'CH', 'CS', 'HS', 'ANY'}
+
+# TTL unit multipliers (BIND-style)
+TTL_MULTIPLIERS = {'s': 1, 'm': 60, 'h': 3600, 'd': 86400, 'w': 604800}
+
+
+def parse_ttl(value: str) -> int | None:
+    """
+    Parse a TTL value, handling BIND-style unit suffixes (s, m, h, d, w).
+
+    Examples: "3600", "1h", "1h30m", "1d", "2w"
+
+    Returns:
+        int: TTL in seconds, or None if not a valid TTL
+    """
+    if not value or not value[0].isdigit():
+        return None
+    lower = value.lower()
+    if lower.isdigit():
+        return int(lower)
+    total = 0
+    current = 0
+    for char in lower:
+        if char.isdigit():
+            current = current * 10 + int(char)
+        elif char in TTL_MULTIPLIERS:
+            total += current * TTL_MULTIPLIERS[char]
+            current = 0
+        else:
+            return None
+    # Trailing bare number treated as seconds
+    total += current
+    return total if total > 0 else None
+
+
+def _find_comment(line: str) -> int:
+    """Find the position of a comment (;) outside of double-quoted strings."""
+    in_quote = False
+    for i, char in enumerate(line):
+        if char == '"':
+            in_quote = not in_quote
+        elif char == ';' and not in_quote:
+            return i
+    return -1
+
 
 def include_record(record: Dict[str, Any], filters: FilterConfig, zone_origin: str = None) -> bool:
     """
@@ -119,15 +165,13 @@ def include_record(record: Dict[str, Any], filters: FilterConfig, zone_origin: s
         if zone_origin and record['name'] == zone_origin:
             return False
 
-    try:
-        ttl_value = int(record['ttl'])
-        if filters.ttl_min is not None and ttl_value < filters.ttl_min:
+    if filters.ttl_min is not None or filters.ttl_max is not None:
+        if record['ttl'] is None:
             return False
-        if filters.ttl_max is not None and ttl_value > filters.ttl_max:
+        if filters.ttl_min is not None and record['ttl'] < filters.ttl_min:
             return False
-    except (ValueError, TypeError):
-        # If TTL can't be converted to int, skip the record
-        return False
+        if filters.ttl_max is not None and record['ttl'] > filters.ttl_max:
+            return False
 
     if filters.class_filter and record['class'].upper() != filters.class_filter.upper():
         return False
@@ -169,69 +213,140 @@ def parse_zonefile(filepath: str = None,
         current_ttl = None
         zone_origin = None
         first_soa_found = False
+        previous_name = None
+        in_parens = False
+        accumulated_line = ''
+        accumulated_line_num = 0
+        accumulated_starts_with_space = False
 
-        for line_num, line in enumerate(file, 1):
-            line = line.strip()
-            if not line or line.startswith(';'):
-                skipped_lines += 1
+        for line_num, raw_line in enumerate(file, 1):
+            # Strip comments outside of quoted strings
+            comment_pos = _find_comment(raw_line)
+            if comment_pos >= 0:
+                raw_line = raw_line[:comment_pos]
+
+            stripped = raw_line.strip()
+            if not stripped:
+                if not in_parens:
+                    skipped_lines += 1
                 continue
 
+            # Handle multi-line records (parenthesized groups)
+            if in_parens:
+                accumulated_line += ' ' + stripped.replace('(', '').replace(')', '')
+                if ')' in stripped:
+                    in_parens = False
+                    line = accumulated_line.strip()
+                    line_num = accumulated_line_num
+                    starts_with_space = accumulated_starts_with_space
+                else:
+                    continue
+            elif '(' in stripped:
+                accumulated_starts_with_space = len(raw_line) > 0 and raw_line[0] in (' ', '\t')
+                accumulated_line = stripped.replace('(', '').replace(')', '')
+                accumulated_line_num = line_num
+                if ')' in stripped:
+                    # Opening and closing parens on same line
+                    line = accumulated_line.strip()
+                    starts_with_space = accumulated_starts_with_space
+                else:
+                    in_parens = True
+                    continue
+            else:
+                line = stripped
+                starts_with_space = len(raw_line) > 0 and raw_line[0] in (' ', '\t')
+
+            # Process directives
             if line.startswith('$ORIGIN'):
-                current_origin = line.split()[1]
-                zone_origin = current_origin
+                parts = line.split()
+                if len(parts) >= 2:
+                    current_origin = parts[1]
+                    zone_origin = current_origin
                 continue
 
             if line.startswith('$TTL'):
-                current_ttl = line.split()[1]
+                parts = line.split()
+                if len(parts) >= 2:
+                    current_ttl = parse_ttl(parts[1])
+                    if current_ttl is None:
+                        print(f"Warning: Invalid $TTL value on line {line_num}: {parts[1]}",
+                              file=sys.stderr)
+                continue
+
+            if line.startswith('$INCLUDE'):
+                print(f"Warning: $INCLUDE directive on line {line_num} not supported, skipping.",
+                      file=sys.stderr)
+                skipped_lines += 1
+                continue
+
+            if line.startswith('$'):
+                skipped_lines += 1
                 continue
 
             try:
                 parts = line.split()
-                if len(parts) < 3:
+                if len(parts) < 2:
                     print(f"Warning: Skipping malformed line {line_num}: {line}",
                           file=sys.stderr)
                     skipped_lines += 1
                     continue
 
-                # Handle different record formats
-                if parts[0].isdigit() or parts[0] == '@':
-                    # Format: [name] [ttl] [class] [type] [data]
-                    if len(parts) >= 4:
-                        name = parts[0]
-                        ttl = parts[1] if not parts[1].isalpha() else current_ttl
-                        record_class = parts[1] if parts[1].isalpha() else parts[2]
-                        record_type = parts[2] if parts[1].isalpha() else parts[3]
-                        data = ' '.join(parts[3:] if parts[1].isalpha() else parts[4:])
-                    else:
-                        print(f"Warning: Skipping incomplete line {line_num}: {line}",
+                idx = 0
+
+                # Determine owner name
+                if starts_with_space:
+                    name = previous_name
+                    if name is None:
+                        print(f"Warning: No previous owner name for line {line_num}: {line}",
                               file=sys.stderr)
                         skipped_lines += 1
                         continue
                 else:
-                    # Format: [name] [class] [type] [data] or [name] [ttl] [class] [type] [data]
                     name = parts[0]
-                    if len(parts) >= 4:
-                        if parts[1].isdigit():
-                            ttl = parts[1]
-                            record_class = parts[2]
-                            record_type = parts[3]
-                            data = ' '.join(parts[4:])
-                        else:
-                            ttl = current_ttl
-                            record_class = parts[1]
-                            record_type = parts[2]
-                            data = ' '.join(parts[3:])
+                    idx = 1
+
+                # Parse optional TTL and class in either order (RFC 1035 allows both)
+                ttl = None
+                record_class = None
+                for _ in range(2):
+                    if idx >= len(parts):
+                        break
+                    token = parts[idx]
+                    parsed = parse_ttl(token)
+                    if parsed is not None and ttl is None:
+                        ttl = parsed
+                        idx += 1
+                    elif token.upper() in DNS_CLASSES and record_class is None:
+                        record_class = token.upper()
+                        idx += 1
                     else:
-                        print(f"Warning: Skipping incomplete line {line_num}: {line}",
-                              file=sys.stderr)
-                        skipped_lines += 1
-                        continue
+                        break
+
+                if ttl is None:
+                    ttl = current_ttl
+                if record_class is None:
+                    record_class = 'IN'
+
+                # Next field must be the record type
+                if idx >= len(parts):
+                    print(f"Warning: Skipping incomplete line {line_num}: {line}",
+                          file=sys.stderr)
+                    skipped_lines += 1
+                    continue
+
+                record_type = parts[idx].upper()
+                idx += 1
+
+                # Remaining fields are the record data
+                data = ' '.join(parts[idx:])
 
                 # Expand relative names
                 if name == '@' and current_origin:
                     name = current_origin
                 elif not name.endswith('.') and current_origin:
                     name = f"{name}.{current_origin}"
+
+                previous_name = name
 
                 # Determine zone origin from first SOA record if $ORIGIN not present
                 if not first_soa_found and record_type == 'SOA':
@@ -276,7 +391,7 @@ def print_records(records: List[Dict[str, Any]]) -> None:
 
     for record in records:
         name = record['name']
-        ttl = str(record['ttl']) if record['ttl'] else 'N/A'
+        ttl = str(record['ttl']) if record['ttl'] is not None else 'N/A'
         record_class = record['class'] if record['class'] else 'N/A'
         record_type = record['type'] if record['type'] else 'N/A'
         data = record['data']
