@@ -1,0 +1,94 @@
+; Example 2 DNS Zone File
+; Exercises multi-line records, TTL suffixes, $ORIGIN changes,
+; continuation lines, class/TTL ordering, wildcards, delegations,
+; quoted TXT with embedded semicolons, and numeric owner names.
+
+$TTL 1d
+$ORIGIN example2.com.
+
+; Multi-line SOA with TTL suffix and BIND-style values
+@ 2w IN SOA ns1.example2.com. hostmaster.example2.com. (
+        2025032801  ; Serial
+        4h          ; Refresh
+        1h          ; Retry
+        2w          ; Expire
+        30m         ; Negative caching TTL
+        )
+
+; NS records at zone apex (not delegations)
+@       IN      NS      ns1.example2.com.
+        IN      NS      ns2.example2.com.
+
+; A records with various TTL formats
+ns1     1h      IN      A       10.0.0.1
+ns2     IN      1h      A       10.0.0.2
+@               IN      A       10.0.0.10
+www     30m     IN      A       10.0.0.20
+api     IN      A       10.0.0.30
+
+; Owner name starting with digits
+3com            IN      A       10.0.0.33
+100dash         IN      A       10.0.0.100
+
+; AAAA records using continuation lines (inherit previous name)
+ipv6host        IN      AAAA    2001:db8::1
+                IN      AAAA    2001:db8::2
+
+; CNAME records
+cdn     IN      CNAME   cdn.provider.example.net.
+status  IN      CNAME   status.example2.com.
+
+; MX records
+@       IN      MX      10 mail.example2.com.
+@       IN      MX      20 mail-backup.example2.com.
+
+; Multi-line TXT with embedded semicolons (should not be treated as comments)
+@       IN      TXT     "v=spf1 ip4:10.0.0.0/24 include:_spf.provider.com ~all"
+_dmarc  IN      TXT     ( "v=DMARC1; p=reject;"
+                          " rua=mailto:dmarc@example2.com;"
+                          " ruf=mailto:forensics@example2.com" )
+
+; DKIM record spanning multiple lines
+selector1._domainkey IN TXT ( "v=DKIM1; k=rsa; "
+    "p=MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQ"
+    "KBgQC3QX5RBGKhWkGOPLSNMFpJkjS0kE9F" )
+
+; SRV records
+_https._tcp     IN      SRV     0 1 443 www.example2.com.
+_submission._tcp IN     SRV     0 1 587 mail.example2.com.
+
+; CAA records
+@       IN      CAA     0 issue "letsencrypt.org"
+@       IN      CAA     0 iodef "mailto:security@example2.com"
+
+; SSHFP record
+bastion         IN      SSHFP   4 2 123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0
+
+; TLSA record with explicit CH class (unusual but valid)
+_443._tcp.www   CH      TLSA    3 1 1 abcdef0123456789
+
+; Wildcard records
+*.wild  1h      IN      A       10.0.0.99
+*.wild          IN      TXT     "wildcard record"
+
+; Delegation to child zone with glue
+child   IN      NS      ns1.child.example2.com.
+child   IN      NS      ns2.child.example2.com.
+ns1.child       IN      A       10.1.0.1
+ns2.child       IN      A       10.1.0.2
+
+; Another delegation (no glue needed, external NS)
+dept    IN      NS      ns1.dept-hosting.example.net.
+dept    IN      NS      ns2.dept-hosting.example.net.
+
+; $ORIGIN change for a sub-section
+$ORIGIN internal.example2.com.
+gateway         IN      A       192.168.1.1
+db              IN      A       192.168.1.10
+cache   1h30m   IN      A       192.168.1.20
+
+; $INCLUDE directive (should warn and skip)
+$INCLUDE "extra-records.zone"
+
+; Record after $INCLUDE to confirm parsing continues
+@       IN      TXT     "internal zone fragment"
