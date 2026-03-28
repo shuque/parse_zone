@@ -31,6 +31,7 @@ class FilterConfig:
     ttl_max: int = None
     class_filter: str = None
     delegations: bool = False
+    regex: bool = False
 
 
 # DNSSEC record types to exclude when without_dnssec is True
@@ -104,8 +105,7 @@ def include_record(record: Dict[str, Any], filters: FilterConfig, zone_origin: s
             return False
 
     if filters.includename:
-        if filters.includename.startswith('^'):
-            # Regex matching
+        if filters.regex:
             try:
                 if not re.search(filters.includename, record['name'], re.IGNORECASE):
                     return False
@@ -118,7 +118,7 @@ def include_record(record: Dict[str, Any], filters: FilterConfig, zone_origin: s
                 return False
 
     if filters.excludename:
-        if filters.excludename.startswith('^'):
+        if filters.regex:
             try:
                 if re.search(filters.excludename, record['name'], re.IGNORECASE):
                     return False
@@ -131,7 +131,7 @@ def include_record(record: Dict[str, Any], filters: FilterConfig, zone_origin: s
                 return False
 
     if filters.includedata:
-        if filters.includedata.startswith('^'):
+        if filters.regex:
             try:
                 if not re.search(filters.includedata, record['data'], re.IGNORECASE):
                     return False
@@ -144,7 +144,7 @@ def include_record(record: Dict[str, Any], filters: FilterConfig, zone_origin: s
                 return False
 
     if filters.excludedata:
-        if filters.excludedata.startswith('^'):
+        if filters.regex:
             try:
                 if re.search(filters.excludedata, record['data'], re.IGNORECASE):
                     return False
@@ -502,6 +502,8 @@ def get_args():
                         help='Exclude records with names containing string (case insensitive)')
     parser.add_argument('--excludedata', type=str, metavar='DATA',
                         help='Exclude records with data containing string (case insensitive)')
+    parser.add_argument('--regex', action='store_true',
+                        help='Treat --include*/--exclude* filter values as regex patterns')
     parser.add_argument('--wildcard', action='store_true',
                         help='Only process wildcard DNS records (names starting with *.')
     parser.add_argument('--delegations', action='store_true',
@@ -534,7 +536,8 @@ def main():
         delegations=args.delegations,
         ttl_min=args.ttl_min,
         ttl_max=args.ttl_max,
-        class_filter=args.class_filter
+        class_filter=args.class_filter,
+        regex=args.regex
     )
 
     records, skipped_lines, zone_origin = parse_zonefile(filepath=args.zonefile, filters=filters)
