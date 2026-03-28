@@ -6,6 +6,34 @@ and filter records by a variety of criteria.
 
 Requires Python 3.9 or later. No external dependencies.
 
+## Installation
+
+The script can be run directly or installed via pip.
+
+### Run directly
+
+```bash
+git clone https://github.com/shuque/parse_zone.git
+cd parse_zone
+./parse_zone.py --help
+```
+
+### Install with pip
+
+```bash
+pip install git+https://github.com/shuque/parse_zone.git
+```
+
+Or from a local checkout:
+
+```bash
+git clone https://github.com/shuque/parse_zone.git
+cd parse_zone
+pip install .
+```
+
+This installs `parse_zone.py` as a script on your PATH.
+
 ## Features
 
 - Parses standard DNS master zone file format (RFC 1035)
