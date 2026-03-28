@@ -61,9 +61,6 @@ python3 parse_zone.py example.zone --stats
 # Print records with statistics
 python3 parse_zone.py example.zone --printrecords --stats
 
-# Only count records
-python3 parse_zone.py example.zone --count-only
-
 # Get help
 python3 parse_zone.py --help
 ```
