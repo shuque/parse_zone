@@ -53,7 +53,7 @@ usage: parse_zone.py [-h] [--version] [--printrecords] [--stats] [--no-dnssec]
                      [--includedata DATA] [--excludename NAME]
                      [--excludedata DATA] [--regex] [--wildcard]
                      [--delegations] [--ttl-min TTL] [--ttl-max TTL]
-                     [--class CLASS]
+                     [--class CLASS] [--minlabelcount N] [--maxlabelcount N]
                      [zonefile]
 
 Parse and display DNS zone file information
@@ -86,6 +86,12 @@ options:
   --ttl-min TTL       Minimum TTL value (inclusive) for filtering records
   --ttl-max TTL       Maximum TTL value (inclusive) for filtering records
   --class CLASS       Filter records by class (e.g., IN, CH, HS)
+  --minlabelcount N   Only include records whose owner name has at least N
+                      labels (including the root label, e.g. "www.example.com."
+                      has 4)
+  --maxlabelcount N   Only include records whose owner name has at most N
+                      labels (including the root label, e.g. "example.com."
+                      has 3)
 ```
 
 ## Examples
@@ -129,6 +135,15 @@ dig axfr example.com @ns1.example.com | ./parse_zone.py --printrecords
 
 # Filter by record class
 ./parse_zone.py example2.zone --printrecords --class CH
+
+# Show only records with 4+ labels (one or more levels below zone apex)
+./parse_zone.py example2.zone --printrecords --minlabelcount 4
+
+# Show only zone apex records (exactly 3 labels for a .com zone)
+./parse_zone.py example2.zone --printrecords --maxlabelcount 3
+
+# Show records at exactly 4 labels deep
+./parse_zone.py example2.zone --printrecords --minlabelcount 4 --maxlabelcount 4
 ```
 
 ## Filtering

@@ -32,6 +32,8 @@ class FilterConfig:
     class_filter: str = None
     delegations: bool = False
     regex: bool = False
+    minlabelcount: int = None
+    maxlabelcount: int = None
 
 
 # DNSSEC record types to exclude when without_dnssec is True
@@ -175,6 +177,17 @@ def include_record(record: Dict[str, Any], filters: FilterConfig, zone_origin: s
 
     if filters.class_filter and record['class'].upper() != filters.class_filter.upper():
         return False
+
+    if filters.minlabelcount is not None or filters.maxlabelcount is not None:
+        name = record['name']
+        if name == '.':
+            label_count = 1
+        else:
+            label_count = len(name.rstrip('.').split('.')) + 1
+        if filters.minlabelcount is not None and label_count < filters.minlabelcount:
+            return False
+        if filters.maxlabelcount is not None and label_count > filters.maxlabelcount:
+            return False
 
     return True
 
@@ -514,6 +527,12 @@ def get_args():
                         help='Maximum TTL value (inclusive) for filtering records')
     parser.add_argument('--class', type=str, metavar='CLASS', dest='class_filter',
                         help='Filter records by class (e.g., IN, CH, HS)')
+    parser.add_argument('--minlabelcount', type=int, metavar='N',
+                        help='Only include records whose owner name has at least N labels '
+                             '(including the root label, e.g. "www.example.com." has 4)')
+    parser.add_argument('--maxlabelcount', type=int, metavar='N',
+                        help='Only include records whose owner name has at most N labels '
+                             '(including the root label, e.g. "example.com." has 3)')
     return parser.parse_args()
 
 
@@ -523,6 +542,12 @@ def main():
 
     if args.zonefile and not os.path.isfile(args.zonefile):
         print(f"Error: '{args.zonefile}' is not a file.", file=sys.stderr)
+        sys.exit(1)
+
+    if (args.minlabelcount is not None and args.maxlabelcount is not None
+            and args.minlabelcount > args.maxlabelcount):
+        print("Error: --minlabelcount cannot be greater than --maxlabelcount.",
+              file=sys.stderr)
         sys.exit(1)
 
     filters = FilterConfig(
@@ -537,7 +562,9 @@ def main():
         ttl_min=args.ttl_min,
         ttl_max=args.ttl_max,
         class_filter=args.class_filter,
-        regex=args.regex
+        regex=args.regex,
+        minlabelcount=args.minlabelcount,
+        maxlabelcount=args.maxlabelcount
     )
 
     records, skipped_lines, zone_origin = parse_zonefile(filepath=args.zonefile, filters=filters)
