@@ -11,7 +11,7 @@ import sys
 import os
 import re
 from dataclasses import dataclass
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional, Tuple
 
 
 __version__ = "0.1.0"
@@ -43,7 +43,7 @@ DNS_CLASSES = {'IN', 'CH', 'CS', 'HS', 'ANY'}
 TTL_MULTIPLIERS = {'s': 1, 'm': 60, 'h': 3600, 'd': 86400, 'w': 604800}
 
 
-def parse_ttl(value: str) -> int | None:
+def parse_ttl(value: str) -> Optional[int]:
     """
     Parse a TTL value, handling BIND-style unit suffixes (s, m, h, d, w).
 
@@ -180,7 +180,7 @@ def include_record(record: Dict[str, Any], filters: FilterConfig, zone_origin: s
 
 
 def parse_zonefile(filepath: str = None,
-                   filters: FilterConfig = None) -> tuple[List[Dict[str, Any]], int, str]:
+                   filters: FilterConfig = None) -> Tuple[List[Dict[str, Any]], int, str]:
     """
     Parse a DNS zone file and return a list of DNS records and count of skipped lines.
 
