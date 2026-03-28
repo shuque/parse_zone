@@ -12,7 +12,7 @@ authors = [
 ]
 description = "Parse DNS zone file"
 readme = "README.md"
-requires-python = ">=3.7"
+requires-python = ">=3.9"
 classifiers = [
     "Programming Language :: Python :: 3",
     "Operating System :: OS Independent",
